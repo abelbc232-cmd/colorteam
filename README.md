@@ -1,5 +1,9 @@
 # colorteam
 
+[![CI](https://github.com/abelbc232-cmd/colorteam/actions/workflows/ci.yml/badge.svg)](https://github.com/abelbc232-cmd/colorteam/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
+
 **An AI color team for federal proposals.**
 
 A proposal is a chain of small, rule-heavy, repetitive jobs: qualify the
@@ -47,6 +51,11 @@ calling anything, so a prompt can be reviewed before it is trusted. `--save` wri
 each output to `runs/` with a timestamp and provenance header, so outputs diff
 between drafts.
 
+**It counts.** `--record` appends every lint result to an append-only history file,
+and `colorteam trend` reports the series. A single lint run tells a writer what to
+fix; a series tells a manager whether the process is improving, which is the only
+claim worth taking to leadership.
+
 ---
 
 ## Install
@@ -63,12 +72,13 @@ On Windows, use `python -m venv .venv && .venv\Scripts\activate` and `copy .env.
 The linter and `--dry-run` need no API key. Verify the install with:
 
 ```bash
-python -m pytest tests/ -q          # 20 passed
+python -m pytest tests/ -q          # 36 passed
 python -m colorteam list            # 6 agents
 python -m colorteam lint examples/sample-draft.md   # 37 findings, gate HOLD
+python -m colorteam trend           # the recorded series
 ```
 
-If those three work, everything except the live API call is working.
+If those four work, everything except the live API call is working.
 
 ## Use
 
@@ -79,6 +89,13 @@ python -m colorteam list
 # deterministic language check — no model, no key, exit code 1 if it fails the gate
 python -m colorteam lint examples/sample-draft.md
 python -m colorteam lint examples/sample-draft.md --json     # for CI
+
+# Word documents too — paragraphs and compliance tables, in document order
+python -m colorteam lint examples/sample-draft.docx
+
+# record a snapshot, then watch the series across drafts
+python -m colorteam lint examples/sample-draft.md --record --label "pink team"
+python -m colorteam trend
 
 # inspect exactly what an agent will ask, without calling the API
 python -m colorteam run SHRED --input examples/sample-rfp.md --dry-run
@@ -117,6 +134,44 @@ to *fully compliant*, *all requirements*, *always*, and *never*. These are the
 findings that are cheap to catch on Tuesday and expensive to catch on the Friday
 of submission.
 
+### The same content, revised
+
+`examples/sample-draft-revised.md` is the identical fictional proposal with every
+finding cleared. Read the two side by side — each change replaces a vague claim
+with a specific one, which is the entire argument for the tool:
+
+| | findings | high | gate |
+| --- | --- | --- | --- |
+| `sample-draft.md` | 37 in 363 words | 7 | HOLD |
+| `sample-draft-revised.md` | 0 in 432 words | 0 | PASS |
+
+*"Our team will ensure that operational availability is maintained"* becomes
+*"Our team sustains operational availability above the 95% monthly threshold at
+all three sites."* The first is a legal exposure that says nothing. The second is
+scoreable.
+
+### Measuring it over time
+
+`--record` appends the result to `history/lint-history.jsonl`, and `trend` reports
+the series. The history committed here is the two sample drafts above:
+
+```
+2 snapshot(s) across 2 document(s)
+
+  date         label              words  high   med   low   per 1k  gate
+  ------------------------------------------------------------------------
+  2026-08-30   pink team            363     7     9    21   101.93  HOLD
+  2026-08-30   red team             432     0     0     0     0.00  PASS
+
+  findings per 1k words  █▁
+  high severity per 1k   █▁
+
+  Findings per 1k words went down from 101.93 to 0.0 (-100.0%).
+```
+
+Findings are normalized per thousand words so drafts of different lengths compare
+honestly — raw counts reward writing less, which is not the goal.
+
 ---
 
 ## The agents
@@ -133,21 +188,30 @@ of submission.
 ## Layout
 
 ```
+.github/workflows/ CI — tests on Python 3.10-3.13, plus behavioral checks
 agents/            six agent definitions — Markdown + YAML frontmatter
 reference/         style-rules.yaml, compliance-schema.md — the knowledge layer
 colorteam/
   lint.py          deterministic checks; the only module with no model dependency
+  loaders.py       .md / .txt / .docx in, plain text out
+  trend.py         append-only history and trend reporting
   registry.py      loads and validates agent definitions
   runner.py        prompt assembly, API call, run persistence
-  cli.py           list / lint / run
-examples/          synthetic solicitation and draft, plus generated outputs
-tests/             20 tests — rule behavior, determinism, prompt assembly, agent validity
+  cli.py           list / lint / trend / run
+examples/          synthetic solicitation, a failing draft, its clean revision, outputs
+history/           append-only lint history
+tests/             36 tests — rules, determinism, loaders, history, prompt assembly
 ```
 
 ```bash
 python -m pytest tests/ -q
-# 20 passed
+# 36 passed
 ```
+
+CI runs the suite on Python 3.10 through 3.13 and then checks behavior, not just
+imports: every agent definition must load, the failing sample must still fail the
+gate, and the revised sample must still pass it. A rules change that silently stops
+catching things breaks the build.
 
 ## Extending it
 
