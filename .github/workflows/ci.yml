@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run the test suite
+        run: python -m pytest tests/ -q
+
+      - name: Every agent definition loads and validates
+        run: python -m colorteam list
+
+      - name: The linter catches the seeded defects
+        # The sample draft is written to fail. A zero exit here would mean the
+        # rules stopped firing, so the expected result is a non-zero exit.
+        run: |
+          if python -m colorteam lint examples/sample-draft.md > /dev/null; then
+            echo "::error::sample-draft.md was expected to fail the gate"
+            exit 1
+          fi
+
+      - name: The revised draft passes the gate
+        run: python -m colorteam lint examples/sample-draft-revised.md
+
+      - name: Word documents lint identically to their text
+        run: python -m colorteam lint examples/sample-draft.docx > /dev/null || true
