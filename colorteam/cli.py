@@ -2,6 +2,8 @@
 
     colorteam list
     colorteam lint   examples/sample-draft.md
+    colorteam lint   draft.docx --record --label "pink team"
+    colorteam trend  --document draft.docx
     colorteam run    SHRED --input examples/sample-rfp.md --dry-run
     colorteam run    SCORE --input examples/sample-draft.md --context examples/sample-rfp.md
 """
@@ -14,11 +16,16 @@ import sys
 from pathlib import Path
 
 from . import lint as lint_mod
-from . import registry, runner
+from . import loaders, registry, runner, trend
 
 
 def _read(path: str) -> str:
-    return Path(path).read_text(encoding="utf-8")
+    """Load a document, turning loader problems into clean CLI errors."""
+    try:
+        return loaders.load_document(path)
+    except (loaders.UnsupportedDocument, loaders.MissingDependency, FileNotFoundError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        raise SystemExit(2)
 
 
 def cmd_list(_: argparse.Namespace) -> int:
@@ -35,10 +42,15 @@ def cmd_lint(args: argparse.Namespace) -> int:
     findings = lint_mod.lint(text)
     summary = lint_mod.summarize(text, findings)
 
+    if args.record:
+        entry = trend.record(args.input, summary, label=args.label)
+        recorded = f"[recorded {entry['recorded']}]"
+    else:
+        recorded = None
+
     if args.json:
-        print(json.dumps(
-            {"summary": summary, "findings": [f.as_dict() for f in findings]}, indent=2
-        ))
+        payload = {"summary": summary, "findings": [f.as_dict() for f in findings]}
+        print(json.dumps(payload, indent=2))
         return 0 if summary["ready_for_color_review"] else 1
 
     print(f"{args.input}: {summary['total_findings']} findings "
@@ -50,11 +62,33 @@ def cmd_lint(args: argparse.Namespace) -> int:
     print(f"  high {counts['high']} | medium {counts['medium']} | low {counts['low']}")
     verdict = "PASS" if summary["ready_for_color_review"] else "HOLD"
     print(f"  gate: {verdict} (thresholds in reference/style-rules.yaml)")
+    if recorded:
+        print(f"  {recorded}", file=sys.stderr)
     return 0 if summary["ready_for_color_review"] else 1
 
 
+def cmd_trend(args: argparse.Namespace) -> int:
+    entries = trend.load_history(document=args.document)
+    if args.limit:
+        entries = entries[-args.limit:]
+
+    if args.json:
+        print(json.dumps(
+            {"entries": entries, "delta": trend.delta(entries)}, indent=2
+        ))
+        return 0
+
+    print(trend.render(entries))
+    return 0
+
+
 def cmd_run(args: argparse.Namespace) -> int:
-    agent = registry.get(args.agent)
+    try:
+        agent = registry.get(args.agent)
+    except KeyError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
     document = _read(args.input)
     extra = {}
     if args.context:
@@ -98,9 +132,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     p_lint = sub.add_parser("lint", help="deterministic language check, no API call")
-    p_lint.add_argument("input")
+    p_lint.add_argument("input", help="a .md, .txt, or .docx document")
     p_lint.add_argument("--json", action="store_true", help="machine-readable output")
+    p_lint.add_argument("--record", action="store_true",
+                        help="append this result to the history file")
+    p_lint.add_argument("--label", help="name this snapshot, e.g. \"pink team\"")
     p_lint.set_defaults(func=cmd_lint)
+
+    p_trend = sub.add_parser("trend", help="show recorded results over time")
+    p_trend.add_argument("--document", help="filter to one document path")
+    p_trend.add_argument("--limit", type=int, help="show only the last N snapshots")
+    p_trend.add_argument("--json", action="store_true", help="machine-readable output")
+    p_trend.set_defaults(func=cmd_trend)
 
     p_run = sub.add_parser("run", help="run one agent against a document")
     p_run.add_argument("agent", help="agent name, e.g. SHRED")
