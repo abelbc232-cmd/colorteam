@@ -10,6 +10,11 @@
     colorteam run    RED   --input pink-with-comments.docx --knowledge --matrix matrix.md
     colorteam knowledge add --path capability-statement.docx --kind capabilities
     colorteam graphics red-draft.md --out graphics/
+    colorteam matrix   export matrix.json -o matrix.xlsx     # correct it in Excel
+    colorteam matrix   import matrix.xlsx --against matrix.json
+    colorteam coverage --matrix matrix.json --draft draft.docx --pages 25
+    colorteam rubric   score judge.json --gate coverage.json
+    colorteam assemble --draft red-draft.md --matrix matrix.json -o proposal.docx
     colorteam run    SCORE --input examples/sample-draft.md --context examples/sample-rfp.md
 """
 
@@ -21,7 +26,8 @@ import sys
 from pathlib import Path
 
 from . import lint as lint_mod
-from . import graphics, knowledge, loaders, registry, runner, trend
+from . import assemble, coverage, graphics, knowledge, loaders, matrix as matrix_mod
+from . import registry, rubric, runner, trend
 
 
 def _read(path: str) -> str:
@@ -190,6 +196,125 @@ def cmd_graphics(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_matrix(args: argparse.Namespace) -> int:
+    if args.action == "export":
+        rows = matrix_mod.load(args.input)
+        if not rows:
+            print(f"error: no requirement rows found in {args.input}", file=sys.stderr)
+            return 2
+        out = Path(args.out or "matrix.xlsx")
+        matrix_mod.export_workbook(rows, out)
+        print(f"{len(rows)} requirement(s) → {out}")
+        print("Correct it in Excel, then read it back with: "
+              f"colorteam matrix import {out}")
+        return 0
+
+    if args.action == "import":
+        rows, report = matrix_mod.import_workbook(args.input)
+        out = Path(args.out or "matrix.json")
+        matrix_mod.save_json(rows, out)
+
+        print(f"{report['total']} row(s) read, {report['live']} live → {out}")
+        if report["added_by_hand"]:
+            print(f"  added by hand: {', '.join(report['added_by_hand'])}")
+        if report["rejected"]:
+            print(f"  rejected by reviewer ({len(report['rejected'])}):")
+            for item in report["rejected"]:
+                note = f" — {item['note']}" if item["note"] else ""
+                print(f"    {item['id']}  [{item['flag']}]{note}")
+        if report["with_notes"]:
+            print(f"  carrying reviewer notes: {', '.join(report['with_notes'])}")
+
+        if args.against:
+            before = matrix_mod.load(args.against)
+            changes = matrix_mod.diff(before, rows)
+            if changes["edited"]:
+                print(f"  edited ({len(changes['edited'])}):")
+                for item in changes["edited"]:
+                    print(f"    {item['id']}: {', '.join(item['fields'])}")
+            if changes["removed"]:
+                print(f"  removed: {', '.join(changes['removed'])}")
+        return 0
+
+    # convert: a markdown table from SHRED into json
+    rows = matrix_mod.load(args.input)
+    out = Path(args.out or "matrix.json")
+    matrix_mod.save_json(rows, out)
+    print(f"{len(rows)} requirement(s) → {out}")
+    return 0
+
+
+def cmd_coverage(args: argparse.Namespace) -> int:
+    rows = matrix_mod.load(args.matrix)
+    draft = _read(args.draft)
+    report = coverage.check(
+        rows, draft, page_limit=args.pages, words_per_page=args.words_per_page
+    )
+    if args.json:
+        print(json.dumps(report, indent=2))
+    else:
+        print(coverage.render(report))
+    if args.out:
+        Path(args.out).write_text(json.dumps(report, indent=2), encoding="utf-8")
+    return 0 if report["passed"] else 1
+
+
+def cmd_rubric(args: argparse.Namespace) -> int:
+    if args.action == "show":
+        print(Path(rubric.RUBRIC_PATH).read_text(encoding="utf-8"))
+        return 0
+
+    if args.action == "schema":
+        print(json.dumps(
+            {
+                "dimensions": {
+                    name: {"score": 4, "justification": "...", "evidence": "quote or pointer"}
+                    for name in rubric.load_rubric()["dimensions"]
+                },
+                "sections": [{"section": "2.3 Technical Approach", "score": 3,
+                              "note": "what would raise it"}],
+                "revision_notes": ["specific, assignable"],
+                "overall_comment": "how an evaluator would read it",
+            },
+            indent=2,
+        ))
+        return 0
+
+    if not args.input:
+        print("error: score needs a judge report (see: colorteam rubric schema)",
+              file=sys.stderr)
+        return 2
+
+    report = rubric.load_report(args.input)
+    judgment = rubric.evaluate(report)
+    gate = json.loads(Path(args.gate).read_text(encoding="utf-8")) if args.gate else None
+    fused = rubric.fuse(judgment, gate)
+
+    if args.json:
+        print(json.dumps(fused, indent=2))
+    else:
+        print(rubric.render(fused))
+    return 0 if fused["verdict"] == "PASS" else 1
+
+
+def cmd_assemble(args: argparse.Namespace) -> int:
+    draft = _read(args.draft)
+    rows = matrix_mod.load(args.matrix) if args.matrix else []
+    gate = None
+    if rows:
+        gate = coverage.check(rows, draft, page_limit=args.pages)
+    out = assemble.build(draft, rows=rows, coverage=gate, title=args.title,
+                         path=args.out)
+    markers = assemble.find_markers(draft)
+    print(f"→ {out}")
+    if rows:
+        print(f"  Appendix A: {sum(1 for r in rows if r.live)} requirements")
+        print(f"  Appendix B: {gate['covered']}/{gate['requirements_live']} addressed")
+    print(f"  Appendix C: {len(markers)} open item(s)"
+          + (" — highlighted in the body" if markers else ""))
+    return 0
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     try:
         agent = registry.get(args.agent)
@@ -266,6 +391,41 @@ def build_parser() -> argparse.ArgumentParser:
     p_gfx.add_argument("--svg", action="store_true",
                        help="also write SVGs, if mermaid-cli is installed")
     p_gfx.set_defaults(func=cmd_graphics)
+
+    p_mx = sub.add_parser("matrix", help="the compliance matrix and its round trip")
+    p_mx.add_argument("action", choices=["convert", "export", "import"])
+    p_mx.add_argument("input", help="markdown table, .json, or a corrected .xlsx")
+    p_mx.add_argument("-o", "--out", help="output path")
+    p_mx.add_argument("--against", metavar="PATH",
+                      help="on import, diff against the matrix you exported")
+    p_mx.set_defaults(func=cmd_matrix)
+
+    p_cov = sub.add_parser("coverage",
+                           help="deterministic gate: requirement coverage and page math")
+    p_cov.add_argument("--matrix", required=True, help="matrix .json, .xlsx, or markdown")
+    p_cov.add_argument("--draft", required=True, help="the draft to check")
+    p_cov.add_argument("--pages", type=float, help="page limit for the whole document")
+    p_cov.add_argument("--words-per-page", type=int, default=coverage.WORDS_PER_PAGE)
+    p_cov.add_argument("--json", action="store_true")
+    p_cov.add_argument("-o", "--out", help="also write the report as JSON")
+    p_cov.set_defaults(func=cmd_coverage)
+
+    p_rub = sub.add_parser("rubric", help="fuse a judge report with the gate")
+    p_rub.add_argument("action", choices=["score", "show", "schema"], nargs="?",
+                       default="score")
+    p_rub.add_argument("input", nargs="?", help="judge report JSON from SCORE")
+    p_rub.add_argument("--gate", metavar="PATH",
+                       help="coverage report JSON; the gate vetoes the judgment")
+    p_rub.add_argument("--json", action="store_true")
+    p_rub.set_defaults(func=cmd_rubric)
+
+    p_asm = sub.add_parser("assemble", help="build the .docx with its appendices")
+    p_asm.add_argument("--draft", required=True)
+    p_asm.add_argument("--matrix", help="matrix for Appendix A and traceability")
+    p_asm.add_argument("--pages", type=float, help="page limit, for the traceability note")
+    p_asm.add_argument("--title", default="Technical Proposal")
+    p_asm.add_argument("-o", "--out", default="proposal.docx")
+    p_asm.set_defaults(func=cmd_assemble)
 
     p_run = sub.add_parser("run", help="run one agent against a document")
     p_run.add_argument("agent", help="agent name, e.g. SHRED")
