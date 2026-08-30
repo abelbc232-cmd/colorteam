@@ -1,0 +1,91 @@
+# Deterministic language rules for federal proposal text.
+# These are checked in pure Python (colorteam/lint.py) before any model is called,
+# so the same input always produces the same findings.
+
+prohibited:
+  # Words that create a legal guarantee or an unbounded commitment.
+  # In a proposal these can become contractual obligations the program cannot meet.
+  - term: ensure
+    severity: high
+    why: "Creates an absolute guarantee. Use 'support', 'help maintain', or state the specific control."
+  - term: guarantee
+    severity: high
+    why: "Unqualified commitment. Reserve for terms the contract actually warrants."
+  - term: guarantees
+    severity: high
+    why: "Unqualified commitment."
+  - term: always
+    severity: high
+    why: "Absolute claim with no exception. Bound it or drop it."
+  - term: never
+    severity: high
+    why: "Absolute claim with no exception."
+  - term: all requirements
+    severity: high
+    why: "Blanket compliance claim. Point to the compliance matrix instead."
+  - term: fully compliant
+    severity: high
+    why: "Blanket compliance claim an evaluator will test."
+  - term: turnkey
+    severity: medium
+    why: "Marketing language. Says nothing an evaluator can score."
+
+overclaim:
+  # Unsupported superlatives. Allowed only with a citation on the same line.
+  - term: comprehensive
+    severity: medium
+    why: "Absolute scope claim. Name what is actually covered."
+  - term: seamless
+    severity: medium
+    why: "Unverifiable. Describe the interface and the handoff."
+  - term: world-class
+    severity: medium
+    why: "Unverifiable marketing."
+  - term: best-in-class
+    severity: medium
+    why: "Unverifiable marketing."
+  - term: cutting-edge
+    severity: medium
+    why: "Unverifiable marketing. Name the technology and its readiness level."
+  - term: state-of-the-art
+    severity: medium
+    why: "Unverifiable marketing."
+  - term: robust
+    severity: low
+    why: "Filler adjective. Replace with the measurable property."
+  - term: leverage
+    severity: low
+    why: "Filler verb. Say 'use' or name the mechanism."
+  - term: synergy
+    severity: low
+    why: "Filler noun."
+
+hedge:
+  # Words that weaken a commitment an evaluator wants to see made.
+  - term: strive to
+    severity: medium
+    why: "Signals effort, not delivery."
+  - term: attempt to
+    severity: medium
+    why: "Signals effort, not delivery."
+  - term: try to
+    severity: medium
+    why: "Signals effort, not delivery."
+  - term: may be able to
+    severity: medium
+    why: "Non-commitment in a section that is being scored."
+  - term: as needed
+    severity: low
+    why: "Undefined trigger. State the condition."
+
+# Passive voice detection: a form of 'to be' followed by a past participle.
+# Regex-based and deliberately conservative -- it flags candidates for a human to judge.
+passive:
+  be_forms: [is, are, was, were, be, been, being]
+  severity: low
+  why: "Passive construction. Evaluators score active, agent-first sentences higher."
+
+thresholds:
+  # Findings per 1,000 words above which a section should not go to a color review.
+  high_per_kwords: 0
+  medium_per_kwords: 3
