@@ -15,6 +15,7 @@
     colorteam coverage --matrix matrix.json --draft draft.docx --pages 25
     colorteam rubric   score judge.json --gate coverage.json
     colorteam assemble --draft red-draft.md --matrix matrix.json -o proposal.docx
+    colorteam project  build                                 # run it with no install
     colorteam run    SCORE --input examples/sample-draft.md --context examples/sample-rfp.md
 """
 
@@ -27,7 +28,7 @@ from pathlib import Path
 
 from . import lint as lint_mod
 from . import assemble, coverage, graphics, knowledge, loaders, matrix as matrix_mod
-from . import registry, rubric, runner, trend
+from . import project, registry, rubric, runner, trend
 
 
 def _read(path: str) -> str:
@@ -315,6 +316,27 @@ def cmd_assemble(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_project(args: argparse.Namespace) -> int:
+    if args.action == "check":
+        current, stale = project.is_current()
+        if current:
+            print("project pack is current")
+            return 0
+        print("project pack is stale:", file=sys.stderr)
+        for name in stale:
+            print(f"  {name}", file=sys.stderr)
+        print("\nrebuild with: python -m colorteam project build", file=sys.stderr)
+        return 1
+
+    written = project.build()
+    print(f"{len(written)} file(s) → project/\n")
+    for path in written:
+        print(f"  {path.relative_to(project.ROOT)}")
+    print("\nPaste project/instructions.md into a Claude Project's instructions,")
+    print("upload the four files in project/knowledge/, and type /classify.")
+    return 0
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     try:
         agent = registry.get(args.agent)
@@ -426,6 +448,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_asm.add_argument("--title", default="Technical Proposal")
     p_asm.add_argument("-o", "--out", default="proposal.docx")
     p_asm.set_defaults(func=cmd_assemble)
+
+    p_proj = sub.add_parser("project",
+                            help="build the no-install Claude Project pack")
+    p_proj.add_argument("action", choices=["build", "check"], nargs="?", default="build")
+    p_proj.set_defaults(func=cmd_project)
 
     p_run = sub.add_parser("run", help="run one agent against a document")
     p_run.add_argument("agent", help="agent name, e.g. SHRED")
