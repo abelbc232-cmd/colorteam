@@ -88,3 +88,103 @@ def test_docx_findings_match_the_same_text_in_markdown(tmp_path):
     md_terms = sorted(f.term.lower() for f in lint.lint(loaders.load_document(md_path)))
     docx_terms = sorted(f.term.lower() for f in lint.lint(loaders.load_document(docx_path)))
     assert md_terms == docx_terms
+
+
+# --- Word comments --------------------------------------------------------
+
+
+def _docx_with_comments(path):
+    """Build a .docx carrying two real Word comments.
+
+    python-docx cannot write comments, so the parts are injected into the
+    package directly — which is also how they are read back.
+    """
+    import shutil
+    import zipfile
+
+    docx = pytest.importorskip("docx")
+
+    document = docx.Document()
+    document.add_paragraph("Our team will ensure continuous availability.")
+    document.add_paragraph("Transition completes within 45 days.")
+    document.save(str(path))
+
+    W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    comments_xml = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:comments xmlns:w="{W}">
+  <w:comment w:id="1" w:author="Dana Reviewer" w:initials="DR" w:date="2026-08-30T10:00:00Z">
+    <w:p><w:r><w:t>Cut the guarantee language here.</w:t></w:r></w:p>
+  </w:comment>
+  <w:comment w:id="2" w:author="Sam Capture" w:initials="SC" w:date="2026-08-30T11:00:00Z">
+    <w:p><w:r><w:t>Add the transition graphic.</w:t></w:r></w:p>
+  </w:comment>
+</w:comments>"""
+
+    temporary = path.with_suffix(".tmp.docx")
+    with zipfile.ZipFile(path) as source, zipfile.ZipFile(temporary, "w") as target:
+        for item in source.infolist():
+            data = source.read(item.filename)
+            if item.filename == "word/document.xml":
+                text = data.decode("utf-8")
+                # Bracket the first paragraph's run with a comment range.
+                text = text.replace(
+                    "<w:p>", '<w:commentRangeStart w:id="1"/><w:p>', 1
+                ).replace("</w:p>", '</w:p><w:commentRangeEnd w:id="1"/>', 1)
+                data = text.encode("utf-8")
+            elif item.filename == "[Content_Types].xml":
+                text = data.decode("utf-8").replace(
+                    "</Types>",
+                    '<Override PartName="/word/comments.xml" ContentType='
+                    '"application/vnd.openxmlformats-officedocument.'
+                    'wordprocessingml.comments+xml"/></Types>',
+                )
+                data = text.encode("utf-8")
+            target.writestr(item, data)
+        target.writestr("word/comments.xml", comments_xml)
+    shutil.move(str(temporary), str(path))
+    return path
+
+
+def test_extracts_word_comments(tmp_path):
+    path = _docx_with_comments(tmp_path / "pink.docx")
+    comments = loaders.extract_comments(path)
+
+    assert len(comments) == 2
+    assert comments[0]["author"] == "Dana Reviewer"
+    assert comments[0]["text"] == "Cut the guarantee language here."
+    assert comments[1]["author"] == "Sam Capture"
+
+
+def test_comment_carries_the_text_it_marks(tmp_path):
+    path = _docx_with_comments(tmp_path / "pink.docx")
+    first = loaders.extract_comments(path)[0]
+    assert "ensure continuous availability" in first["anchor"]
+
+
+def test_a_docx_without_comments_returns_empty(tmp_path):
+    docx = pytest.importorskip("docx")
+    path = tmp_path / "clean.docx"
+    document = docx.Document()
+    document.add_paragraph("No comments here.")
+    document.save(str(path))
+    assert loaders.extract_comments(path) == []
+
+
+def test_asking_a_markdown_file_for_comments_is_safe():
+    assert loaders.extract_comments(EXAMPLES / "sample-draft.md") == []
+
+
+def test_missing_file_returns_no_comments():
+    assert loaders.extract_comments("nope.docx") == []
+
+
+def test_format_comments_is_readable(tmp_path):
+    path = _docx_with_comments(tmp_path / "pink.docx")
+    rendered = loaders.format_comments(loaders.extract_comments(path))
+    assert "Dana Reviewer" in rendered
+    assert "says: Cut the guarantee language here." in rendered
+    assert 'on: "' in rendered
+
+
+def test_format_comments_empty():
+    assert loaders.format_comments([]) == ""

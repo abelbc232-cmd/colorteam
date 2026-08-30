@@ -90,7 +90,7 @@ def test_clean_text_passes_the_gate(rules):
 
 def test_every_agent_loads_with_valid_frontmatter():
     agents = registry.load_all()
-    assert len(agents) == 8
+    assert len(agents) == 10
     for agent in agents.values():
         assert agent.name.isupper()
         assert agent.stage

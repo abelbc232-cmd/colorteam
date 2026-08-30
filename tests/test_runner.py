@@ -76,7 +76,8 @@ def test_agents_appear_in_lifecycle_order():
     """Filename order is lifecycle order — the list output is a process map."""
     names = list(registry.load_all())
     assert names == [
-        "GATE", "SHRED", "OUTLINE", "DRAFT", "PINK", "SCORE", "REDLINE", "DEBRIEF"
+        "GATE", "CLASSIFY", "SHRED", "OUTLINE", "DRAFT", "PINK", "RED",
+        "SCORE", "REDLINE", "DEBRIEF",
     ]
 
 
@@ -108,3 +109,43 @@ def test_pink_receives_matrix_and_solicitation_as_named_blocks():
     assert "<compliance_matrix>" in payload["user"]
     assert "<solicitation>" in payload["user"]
     assert "L-014" in payload["user"]
+
+
+def test_red_dispositions_every_comment():
+    prompt = registry.get("RED").prompt
+    assert "Every comment gets dispositioned" in prompt
+    for verdict in ("ACCEPTED", "REJECTED", "NEEDS DECISION"):
+        assert verdict in prompt
+
+
+def test_red_refuses_to_average_conflicting_reviewers():
+    prompt = registry.get("RED").prompt
+    assert "do not average them" in prompt
+
+
+def test_red_will_not_turn_a_reviewer_assertion_into_a_fact():
+    prompt = registry.get("RED").prompt
+    assert "do not become facts" in prompt
+    assert "Never invent" in prompt
+
+
+def test_red_receives_comments_and_knowledge_as_named_blocks():
+    payload = runner.assemble(
+        registry.get("RED"),
+        "pink draft text",
+        {"reviewer_comments": "[1] Dana: cut this", "knowledge": "<source/>"},
+    )
+    assert "<reviewer_comments>" in payload["user"]
+    assert "<knowledge>" in payload["user"]
+
+
+def test_red_specifies_graphics_as_mermaid():
+    prompt = registry.get("RED").prompt
+    assert "mermaid" in prompt
+    assert "Action caption" in prompt
+
+
+def test_classify_distinguishes_market_research_from_a_proposal():
+    prompt = registry.get("CLASSIFY").prompt
+    assert "Sources Sought" in prompt
+    assert "Not a proposal" in prompt
