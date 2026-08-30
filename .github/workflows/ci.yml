@@ -52,6 +52,11 @@ jobs:
       - name: The knowledge base scaffolds cleanly
         run: python -m colorteam knowledge init
 
+      - name: The Claude Project pack matches its sources
+        # The pack is generated from agents/ and reference/. If it drifts, the
+        # no-install version runs prompts that are not the ones under test.
+        run: python -m colorteam project check
+
       - name: The matrix round trips through a workbook
         run: |
           python -m colorteam matrix convert examples/sample-matrix.md -o /tmp/m.json
