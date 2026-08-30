@@ -5,6 +5,8 @@
     colorteam lint   draft.docx --record --label "pink team"
     colorteam trend  --document draft.docx
     colorteam run    SHRED --input examples/sample-rfp.md --dry-run
+    colorteam run    DRAFT --input outline.md --context rfp.docx --material past-perf.docx
+    colorteam run    PINK  --input draft.docx --matrix matrix.md --context rfp.docx
     colorteam run    SCORE --input examples/sample-draft.md --context examples/sample-rfp.md
 """
 
@@ -26,6 +28,27 @@ def _read(path: str) -> str:
     except (loaders.UnsupportedDocument, loaders.MissingDependency, FileNotFoundError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         raise SystemExit(2)
+
+
+def _gather_context(args: argparse.Namespace) -> dict[str, str]:
+    """Collect the named side inputs an agent's frontmatter declares.
+
+    Each flag maps to one tagged block in the prompt, so an agent that declares
+    `inputs: [draft, compliance_matrix, solicitation]` receives exactly those
+    names. Several source documents collapse into one <source_material> block,
+    separated by their filenames so the agent can cite which one it drew from.
+    """
+    extra: dict[str, str] = {}
+    if getattr(args, "context", None):
+        extra["solicitation"] = _read(args.context)
+    if getattr(args, "matrix", None):
+        extra["compliance_matrix"] = _read(args.matrix)
+    materials = getattr(args, "material", None) or []
+    if materials:
+        extra["source_material"] = "\n\n".join(
+            f"--- {path} ---\n{_read(path)}" for path in materials
+        )
+    return extra
 
 
 def cmd_list(_: argparse.Namespace) -> int:
@@ -90,9 +113,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         return 2
 
     document = _read(args.input)
-    extra = {}
-    if args.context:
-        extra["solicitation"] = _read(args.context)
+    extra = _gather_context(args)
 
     if args.dry_run:
         payload = runner.assemble(agent, document, extra)
@@ -148,7 +169,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_run = sub.add_parser("run", help="run one agent against a document")
     p_run.add_argument("agent", help="agent name, e.g. SHRED")
     p_run.add_argument("--input", required=True, help="the document to process")
-    p_run.add_argument("--context", help="optional solicitation for scoring agents")
+    p_run.add_argument("--context", metavar="PATH",
+                       help="the solicitation, for agents that evaluate against it")
+    p_run.add_argument("--matrix", metavar="PATH",
+                       help="a compliance matrix, for agents that check coverage")
+    p_run.add_argument("--material", metavar="PATH", action="append",
+                       help="source material for DRAFT; repeat for several files")
     p_run.add_argument("--dry-run", action="store_true",
                        help="print the assembled prompt instead of calling the API")
     p_run.add_argument("--save", action="store_true", help="write the output to runs/")
