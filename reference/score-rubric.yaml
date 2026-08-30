@@ -1,0 +1,61 @@
+# The weighted rubric SCORE fills in and `colorteam rubric` fuses into a verdict.
+#
+# The deterministic gate (`colorteam coverage`, `colorteam lint`) already decides
+# what arithmetic can decide: requirement coverage, page math, prohibited
+# language. This rubric governs only what a regex cannot judge — responsiveness,
+# credibility, honesty, persuasion. Do not re-grade the deterministic half here;
+# a judgment score can never excuse a gate failure.
+
+scale: "1-5"
+
+descriptors:
+  5: "A source selection would record this as a strength or discriminator."
+  4: "Clearly compliant and credible. Minor polish only."
+  3: "Meets the bar. Nothing wrong, nothing winning."
+  2: "A gap, vagueness, or unsupported claim a reviewer would flag."
+  1: "Would draw a weakness or deficiency in source selection."
+
+dimensions:
+  responsiveness:
+    weight: 0.25
+    what_five_looks_like: >
+      Prose maps directly onto the customer's evaluation factors, in the
+      customer's own structure and words, so an evaluator scores it section by
+      section without hunting. Score down hard where a criterion the
+      solicitation names is buried under a heading of the offeror's invention.
+  technical_credibility:
+    weight: 0.25
+    what_five_looks_like: >
+      Claims are specific, quantified, and consistent with the evidence base.
+      The approach reads as though written by people who have actually done it.
+  honesty_and_grounding:
+    weight: 0.20
+    what_five_looks_like: >
+      Weaknesses are handled as honest plans rather than overclaimed. Nothing
+      reads as fabricated past performance or invented capability. Open items
+      are marked, not smoothed over.
+  win_theme_clarity:
+    weight: 0.15
+    what_five_looks_like: >
+      Discriminators are stated, threaded through the section, and substantiated
+      — not asserted once and abandoned.
+  clarity_and_structure:
+    weight: 0.15
+    what_five_looks_like: >
+      Evaluator-friendly prose. Consistent terminology. Sections do their job
+      and stop.
+
+thresholds:
+  # Normalized = (weighted - 1) / 4, putting the score on 0-1.
+  pass_normalized: 0.75          # weighted 4.0 of 5
+  no_dimension_below: 2          # any dimension at 1 fails outright
+  no_section_below: 2            # any section at 1 fails outright
+  revise_at_or_below: 2          # sections at or under this go on the worklist
+  borderline_band: 0.05          # within this of the threshold, judge twice and average
+
+rules:
+  - "Every score carries evidence — a quote or a section pointer. A score you cannot support is too high."
+  - "Length is not quality. Do not reward a long section for being long."
+  - "A claim outside the evidence base is a credibility risk under honesty_and_grounding, however good it sounds."
+  - "Never raise a judgment score to compensate for a deterministic gate failure."
+  - "Never lower a score because prose is unexciting when it is accurate and compliant."
