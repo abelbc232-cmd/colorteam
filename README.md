@@ -15,14 +15,15 @@ Most of those jobs are done by hand, by expensive people, under deadline, every
 time. `colorteam` gives each one a specialist and lines them up in the order the
 work actually happens.
 
-Eight agents, one deterministic linter, and a CLI.
+Ten agents, an evidence base, a deterministic linter, and a CLI.
 
 ```
-qualify → analyze → plan → draft → pink review → score → quality → post-award
- GATE      SHRED   OUTLINE  DRAFT     PINK       SCORE   REDLINE    DEBRIEF
-                                                            ▲
-                                                   colorteam lint
-                                             (deterministic, no model)
+qualify ──────── analyze ── plan ─── draft ── pink ── red ─── score ── quality ── post-award
+GATE  CLASSIFY   SHRED    OUTLINE    DRAFT    PINK    RED     SCORE    REDLINE    DEBRIEF
+                                       │                │        ▲
+                              knowledge/ evidence       │   colorteam lint
+                              (never committed)  reviewer comments   (deterministic)
+                                                 + graphics
 ```
 
 A human decides between every stage. Nothing chains automatically.
@@ -58,6 +59,19 @@ plausibly, survives review, and becomes a false statement in a submitted offer.
 That is the one failure this tool must not have, so the constraint is the first
 thing in the prompt rather than a caveat at the end.
 
+**Claims are grounded in an evidence base, not in the model.** `knowledge/`
+holds capability statements, resumes, past performance, prior proposals won and
+lost, and pricing history. `--knowledge` ranks that material against the document
+in hand and packs the relevant parts into the prompt with the source file named on
+every excerpt, so a drafting agent cites where a fact came from and a reviewer
+checks it in seconds. Ranking is plain term overlap — no embeddings, no extra
+dependency, no network, and a ranking a human can predict and argue with.
+
+**Review feedback is read where reviewers actually leave it.** Reviewers comment
+in Word margins, not in a separate document. `colorteam` reads `word/comments.xml`
+out of the package directly, including the text each comment is anchored to, so a
+commented pink draft is a valid input with no retyping.
+
 **Every run is auditable.** `--dry-run` prints the exact assembled prompt without
 calling anything, so a prompt can be reviewed before it is trusted. `--save` writes
 each output to `runs/` with a timestamp and provenance header, so outputs diff
@@ -84,8 +98,8 @@ On Windows, use `python -m venv .venv && .venv\Scripts\activate` and `copy .env.
 The linter and `--dry-run` need no API key. Verify the install with:
 
 ```bash
-python -m pytest tests/ -q          # 45 passed
-python -m colorteam list            # 8 agents
+python -m pytest tests/ -q          # 83 passed
+python -m colorteam list            # 10 agents
 python -m colorteam lint examples/sample-draft.md   # 37 findings, gate HOLD
 python -m colorteam trend           # the recorded series
 ```
@@ -119,6 +133,21 @@ python -m colorteam run DRAFT --input outline.md \
 python -m colorteam run PINK --input draft.docx \
                             --matrix matrix.md \
                             --context rfp.docx
+
+# build the evidence base once, then draft against it
+python -m colorteam knowledge init
+python -m colorteam knowledge add --path capability-statement.docx --kind capabilities
+python -m colorteam knowledge add --path 2024-award.docx --kind proposals-won
+python -m colorteam knowledge list
+
+python -m colorteam run DRAFT --input outline.md --context rfp.docx --knowledge
+
+# pink draft with reviewer comments in the margins → red team draft
+python -m colorteam run RED --input pink-draft-commented.docx \
+                           --matrix matrix.md --context rfp.docx --knowledge
+
+# pull the figures RED specified and render them
+python -m colorteam graphics red-draft.md --out graphics/
 
 # inspect exactly what an agent will ask, without calling the API
 python -m colorteam run SHRED --input examples/sample-rfp.md --dry-run
@@ -202,10 +231,12 @@ honestly — raw counts reward writing less, which is not the goal.
 | Agent | Stage | What it does |
 | --- | --- | --- |
 | `GATE` | qualification | Scores an opportunity on customer knowledge, solution fit, competitive position, contract fit, and resource fit. Weights customer knowledge and competitive position double, because pursuits are won before release. Returns PURSUE / WATCH / DECLINE and the three questions that would change the answer. |
+| `CLASSIFY` | qualification | Identifies the solicitation type — RFP, RFQ, RFI/Sources Sought, SBIR/STTR, BAA/CSO, OTA, vehicle on-ramp, task order — and names the artifact each actually requires, with the language that decided it. A team that answers a Sources Sought notice with a full proposal has spent three weeks on a document the government may not evaluate. |
 | `SHRED` | analysis | Extracts every atomic requirement into a compliance matrix with verbatim text and exact citations. Maps Section L instructions to Section M criteria in both directions and flags the unmapped ones — an M criterion with no L instruction is where proposals quietly lose points. |
 | `OUTLINE` | planning | Turns the matrix into an annotated outline: page budgets allocated by evaluation weight rather than by how much there is to say, a win theme per section, and the specific proof each claim needs. Flags unsupported claims while there is still time to find the proof. |
 | `DRAFT` | drafting | Writes a section to pink-team maturity from the annotated outline. Forbidden from inventing facts: missing evidence becomes a `[PROOF NEEDED]` marker with the sentence built around it, and every marker lands in a Placeholder Manifest with an owner. Carries the same style rules `REDLINE` enforces, so it does not generate findings a later stage has to catch. |
 | `PINK` | review | Chairs a pink team. Checks coverage against the compliance matrix first — including requirements restated but never answered — then story, discriminators, proof posture, and page allocation against evaluation weight. Returns ON TRACK / AT RISK / REWRITE per section and an assignment list ordered by evaluation weight blocked. Deliberately does no line editing. |
+| `RED` | revision | Takes a pink draft plus reviewer comments and produces the red team draft. Dispositions every comment as ACCEPTED / ACCEPTED WITH MODIFICATION / REJECTED / NEEDS DECISION with a reason. Refuses to average conflicting reviewers — it implements the better-supported one and escalates the conflict. A reviewer asserting a figure the evidence does not support produces a marker, not a sentence. Specifies each figure as Mermaid with an action caption. |
 | `SCORE` | review | Reads the draft as a source selection board member who may only credit what is on the page. Returns strengths, weaknesses, and deficiencies with quoted evidence, then ranks fixes by points recovered per hour of rework. |
 | `REDLINE` | quality | The judgment layer on top of `lint`: unsupported claims, terminology drift, undefined acronyms, broken cross-references, and numbers that disagree between text, tables, and graphics. Every finding carries a suggested replacement in the document's own voice. |
 | `DEBRIEF` | post-award | Separates what the government actually said from what the team inferred, traces each finding to the lifecycle stage that created it, and writes corrective actions specific enough to audit next quarter. |
@@ -219,14 +250,18 @@ agents/            eight agent definitions — Markdown + YAML frontmatter,
 reference/         style-rules.yaml, compliance-schema.md — the knowledge layer
 colorteam/
   lint.py          deterministic checks; the only module with no model dependency
-  loaders.py       .md / .txt / .docx in, plain text out
+  loaders.py       .md / .txt / .docx in, plain text out — plus Word comments
+  knowledge.py     the evidence base: load, rank, excerpt, pack with provenance
+  graphics.py      pull mermaid figures out of a draft and render them
   trend.py         append-only history and trend reporting
   registry.py      loads and validates agent definitions
   runner.py        prompt assembly, API call, run persistence
-  cli.py           list / lint / trend / run
+  cli.py           list / lint / trend / knowledge / graphics / run
+knowledge/         YOUR evidence base — gitignored, never committed
 examples/          synthetic solicitation, a failing draft, its clean revision, outputs
 history/           append-only lint history
-tests/             45 tests — rules, determinism, loaders, history, prompt assembly
+tests/             83 tests — rules, determinism, loaders, comments, knowledge,
+                   graphics, history, prompt assembly
 ```
 
 ```bash
@@ -290,7 +325,11 @@ it. Specifically:
   downstream — if it is wrong and nobody checked, so is the rest.
 - **Nothing is remembered between runs.** Each call is independent. The artifacts
   on disk are the state.
-- **Output is Markdown.** It reads `.docx` but does not write it.
+- **Output is Markdown.** It reads `.docx`, including reviewer comments, but does
+  not write `.docx`. Figures render as an HTML page you print to PDF.
+- **Nothing you put in `knowledge/` is committed.** That is enforced in
+  `.gitignore`, and it is the point: a portfolio repository is the last place a
+  real capability statement or a losing proposal belongs.
 - **No sources are connected.** It does not pull from SAM.gov, a CRM, or a content
   library, and it does not submit anything anywhere.
 

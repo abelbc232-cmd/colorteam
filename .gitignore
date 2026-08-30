@@ -6,3 +6,10 @@ venv/
 .pytest_cache/
 runs/
 *.egg-info/
+
+# The evidence base. Capability statements, resumes, past performance, prior
+# proposals, and pricing are among the most sensitive documents a company owns.
+# They live on your disk and never reach the repository.
+knowledge/**
+!knowledge/**/README.md
+graphics/
