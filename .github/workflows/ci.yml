@@ -52,6 +52,26 @@ jobs:
       - name: The knowledge base scaffolds cleanly
         run: python -m colorteam knowledge init
 
+      - name: The matrix round trips through a workbook
+        run: |
+          python -m colorteam matrix convert examples/sample-matrix.md -o /tmp/m.json
+          python -m colorteam matrix export /tmp/m.json -o /tmp/m.xlsx
+          python -m colorteam matrix import /tmp/m.xlsx -o /tmp/m2.json --against /tmp/m.json
+
+      - name: The coverage gate holds a draft that misses a requirement
+        run: |
+          printf '## 2.1 Only section\n\nText.\n' > /tmp/thin.md
+          if python -m colorteam coverage --matrix /tmp/m.json --draft /tmp/thin.md; then
+            echo "::error::the gate should have held a draft missing requirements"
+            exit 1
+          fi
+
+      - name: The assembled document carries its appendices
+        run: |
+          python -m colorteam assemble --draft examples/sample-draft-revised.md \
+                 --matrix /tmp/m.json -o /tmp/proposal.docx
+          test -f /tmp/proposal.docx
+
       - name: Figures extract and render from a draft
         run: |
           python -m colorteam graphics examples/sample-graphics.md --out /tmp/gfx
