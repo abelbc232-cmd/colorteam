@@ -52,7 +52,7 @@ between drafts.
 ## Install
 
 ```bash
-git clone https://github.com/<you>/colorteam.git
+git clone https://github.com/abelbc232-cmd/colorteam.git
 cd colorteam
 pip install -r requirements.txt
 cp .env.example .env        # add your ANTHROPIC_API_KEY
