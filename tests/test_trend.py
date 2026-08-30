@@ -101,3 +101,42 @@ def test_render_includes_rows_and_direction(history):
     assert "pink" in output and "red" in output
     assert "went down" in output
     assert "-90.0%" in output
+
+
+# --- CLI context gathering ------------------------------------------------
+
+
+def test_material_flag_repeats(tmp_path):
+    from colorteam import cli
+
+    a = tmp_path / "a.md"; a.write_text("alpha source", encoding="utf-8")
+    b = tmp_path / "b.md"; b.write_text("bravo source", encoding="utf-8")
+
+    args = cli.build_parser().parse_args(
+        ["run", "DRAFT", "--input", "x.md", "--material", str(a), "--material", str(b)]
+    )
+    extra = cli._gather_context(args)
+    assert "alpha source" in extra["source_material"]
+    assert "bravo source" in extra["source_material"]
+    # Filenames are kept so the agent can say which source a fact came from.
+    assert str(a) in extra["source_material"]
+
+
+def test_matrix_flag_maps_to_its_own_block(tmp_path):
+    from colorteam import cli
+
+    matrix = tmp_path / "m.md"; matrix.write_text("L-014 | shall", encoding="utf-8")
+    args = cli.build_parser().parse_args(
+        ["run", "PINK", "--input", "d.md", "--matrix", str(matrix)]
+    )
+    extra = cli._gather_context(args)
+    assert extra["compliance_matrix"] == "L-014 | shall"
+    assert "solicitation" not in extra
+    assert "source_material" not in extra
+
+
+def test_no_flags_gathers_nothing():
+    from colorteam import cli
+
+    args = cli.build_parser().parse_args(["run", "SHRED", "--input", "x.md"])
+    assert cli._gather_context(args) == {}
