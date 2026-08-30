@@ -15,15 +15,18 @@ Most of those jobs are done by hand, by expensive people, under deadline, every
 time. `colorteam` gives each one a specialist and lines them up in the order the
 work actually happens.
 
-Ten agents, an evidence base, a deterministic linter, and a CLI.
+Ten agents, an evidence base, three deterministic gates, and a CLI.
 
 ```
-qualify ──────── analyze ── plan ─── draft ── pink ── red ─── score ── quality ── post-award
+qualify ──────── analyze ── plan ─── draft ── pink ── red ─── score ── quality ── assemble
 GATE  CLASSIFY   SHRED    OUTLINE    DRAFT    PINK    RED     SCORE    REDLINE    DEBRIEF
-                                       │                │        ▲
-                              knowledge/ evidence       │   colorteam lint
-                              (never committed)  reviewer comments   (deterministic)
-                                                 + graphics
+                    │                  │              │         │
+             matrix export/import   knowledge/   comments +   rubric
+             (a human corrects     (never        graphics     (gate vetoes
+              the extraction)      committed)                 the judgment)
+                    └──────────── colorteam coverage ─────────┘
+                            lint · coverage · rubric
+                        deterministic — no model involved
 ```
 
 A human decides between every stage. Nothing chains automatically.
@@ -58,6 +61,23 @@ would close it and who owns it. A fabricated figure in a federal proposal reads
 plausibly, survives review, and becomes a false statement in a submitted offer.
 That is the one failure this tool must not have, so the constraint is the first
 thing in the prompt rather than a caveat at the end.
+
+**The extraction is built to be corrected.** Requirement extraction is the
+highest-leverage step and the one a model gets imperfectly right — a requirement
+missed there is a requirement nobody writes to. So the compliance matrix round
+trips through a spreadsheet: `matrix export` produces a workbook with dropdown
+validation and instructions, a proposal manager corrects it in Excel, and
+`matrix import` reads it back and *reports* what changed — edits, hand-added
+rows, and rows flagged as mis-extracted. Rejected rows stop counting against
+coverage but are never deleted, so the record of what the machine extracted and
+what a human rejected stays intact.
+
+**The gate is a veto, not a vote.** `colorteam coverage` checks requirement
+coverage and page math; `colorteam lint` checks language; both are pure
+arithmetic. `colorteam rubric` fuses the model's weighted judgment score with
+those gates — and a failed gate produces HOLD regardless of how well the proposal
+reads. A proposal that misses a requirement is non-responsive, and no judgment
+score may overturn that.
 
 **Claims are grounded in an evidence base, not in the model.** `knowledge/`
 holds capability statements, resumes, past performance, prior proposals won and
@@ -98,7 +118,7 @@ On Windows, use `python -m venv .venv && .venv\Scripts\activate` and `copy .env.
 The linter and `--dry-run` need no API key. Verify the install with:
 
 ```bash
-python -m pytest tests/ -q          # 83 passed
+python -m pytest tests/ -q          # 139 passed
 python -m colorteam list            # 10 agents
 python -m colorteam lint examples/sample-draft.md   # 37 findings, gate HOLD
 python -m colorteam trend           # the recorded series
@@ -148,6 +168,20 @@ python -m colorteam run RED --input pink-draft-commented.docx \
 
 # pull the figures RED specified and render them
 python -m colorteam graphics red-draft.md --out graphics/
+
+# the matrix round trip — the one place a human corrects the machine
+python -m colorteam matrix convert shred-output.md -o matrix.json
+python -m colorteam matrix export matrix.json -o matrix.xlsx    # correct in Excel
+python -m colorteam matrix import matrix.xlsx --against matrix.json
+
+# the deterministic gate: coverage and page math, no model
+python -m colorteam coverage --matrix matrix.json --draft draft.docx --pages 25
+
+# fuse the model's score with the gate — the gate wins
+python -m colorteam rubric score judge.json --gate coverage.json
+
+# build the .docx, with compliance, traceability, and open-item appendices
+python -m colorteam assemble --draft red-draft.md --matrix matrix.json -o proposal.docx
 
 # inspect exactly what an agent will ask, without calling the API
 python -m colorteam run SHRED --input examples/sample-rfp.md --dry-run
@@ -253,15 +287,21 @@ colorteam/
   loaders.py       .md / .txt / .docx in, plain text out — plus Word comments
   knowledge.py     the evidence base: load, rank, excerpt, pack with provenance
   graphics.py      pull mermaid figures out of a draft and render them
+  matrix.py        the compliance matrix and its spreadsheet round trip
+  coverage.py      deterministic gate: requirement coverage and page math
+  rubric.py        weighted judgment fused with the gate; builds the worklist
+  assemble.py      the .docx, with its three appendices
   trend.py         append-only history and trend reporting
   registry.py      loads and validates agent definitions
   runner.py        prompt assembly, API call, run persistence
-  cli.py           list / lint / trend / knowledge / graphics / run
+  cli.py           list / lint / trend / knowledge / graphics /
+                   matrix / coverage / rubric / assemble / run
 knowledge/         YOUR evidence base — gitignored, never committed
 examples/          synthetic solicitation, a failing draft, its clean revision, outputs
 history/           append-only lint history
-tests/             83 tests — rules, determinism, loaders, comments, knowledge,
-                   graphics, history, prompt assembly
+reference/         style-rules.yaml, compliance-schema.md, score-rubric.yaml
+tests/             139 tests — rules, determinism, loaders, comments, knowledge,
+                   graphics, matrix round trip, coverage, rubric, assembly
 ```
 
 ```bash
@@ -325,8 +365,12 @@ it. Specifically:
   downstream — if it is wrong and nobody checked, so is the rest.
 - **Nothing is remembered between runs.** Each call is independent. The artifacts
   on disk are the state.
-- **Output is Markdown.** It reads `.docx`, including reviewer comments, but does
-  not write `.docx`. Figures render as an HTML page you print to PDF.
+- **The .docx is a draft, not a submission.** `assemble` builds the document with
+  its appendices and highlights every open item in the body, because an unclosed
+  `[PROOF NEEDED]` reaching a customer is a fabrication risk. It does not apply a
+  customer's template, and templates are pass/fail.
+- **Page counts are estimates.** Words-per-page approximates real pagination. A
+  draft 40% over is over under any template; a draft 2% over needs the real one.
 - **Nothing you put in `knowledge/` is committed.** That is enforced in
   `.gitignore`, and it is the point: a portfolio repository is the last place a
   real capability statement or a losing proposal belongs.
