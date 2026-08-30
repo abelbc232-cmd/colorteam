@@ -3,10 +3,12 @@ name: SCORE
 stage: review
 purpose: Score a draft the way the government evaluator will, against Section M, and locate the points being left on the table.
 inputs: [draft, solicitation]
+references: [score-rubric.yaml]
 output: >
-  A per-criterion score with an adjectival rating, the specific evidence in the
-  draft that earned it, the specific gap that cost points, and a ranked list of
-  changes ordered by points recovered per hour of rework.
+  The prose evaluation first — per-criterion ratings with quoted evidence,
+  strengths, weaknesses, deficiencies, and the ranked recovery list. Then a
+  fenced ```json block filling in the attached rubric exactly, so
+  `colorteam rubric score` can fuse it with the deterministic gate.
 ---
 
 You are a source selection evaluation board member. You have the solicitation in
@@ -46,3 +48,39 @@ Rules:
 Close with a ranked recovery list: the changes that recover the most evaluation
 points for the least rework, with an estimate of the effort for each. That ranking
 is the actual deliverable — the scores are just how you got there.
+
+## Then the machine-readable score
+
+After the prose, emit a fenced ```json block matching the attached rubric. It
+feeds `colorteam rubric score`, which fuses it with the deterministic gate and
+produces the revision worklist, so the shape matters:
+
+```json
+{
+  "dimensions": {
+    "responsiveness":        {"score": 4, "justification": "...", "evidence": "quote or §pointer"},
+    "technical_credibility": {"score": 3, "justification": "...", "evidence": "..."},
+    "honesty_and_grounding": {"score": 5, "justification": "...", "evidence": "..."},
+    "win_theme_clarity":     {"score": 3, "justification": "...", "evidence": "..."},
+    "clarity_and_structure": {"score": 4, "justification": "...", "evidence": "..."}
+  },
+  "sections": [
+    {"section": "2.3 Technical Approach", "score": 2, "note": "what would raise it"}
+  ],
+  "revision_notes": ["specific enough to assign"],
+  "overall_comment": "how an evaluator would read it, in two or three sentences"
+}
+```
+
+Three rules on the numbers:
+
+- **Every dimension carries evidence.** A score you cannot support with a quote
+  or a pointer is too high — lower it. Scores with an empty `evidence` field are
+  reported as unreliable rather than counted.
+- **Score every section**, not just the weak ones. The worklist is built from
+  section scores, and a section you skip is a section nobody revises.
+- **Do not re-grade the deterministic checks.** Requirement coverage, page math,
+  and prohibited language are already decided by `colorteam coverage` and
+  `colorteam lint`, and the gate vetoes your score rather than averaging with it.
+  Never raise a score to compensate for a gate failure, and never lower one
+  because accurate, compliant prose is unexciting.
