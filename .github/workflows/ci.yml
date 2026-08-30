@@ -48,3 +48,11 @@ jobs:
 
       - name: Word documents lint identically to their text
         run: python -m colorteam lint examples/sample-draft.docx > /dev/null || true
+
+      - name: The knowledge base scaffolds cleanly
+        run: python -m colorteam knowledge init
+
+      - name: Figures extract and render from a draft
+        run: |
+          python -m colorteam graphics examples/sample-graphics.md --out /tmp/gfx
+          test -f /tmp/gfx/graphics.html
