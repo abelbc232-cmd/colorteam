@@ -104,6 +104,29 @@ claim worth taking to leadership.
 
 ---
 
+## Two ways to run it
+
+**As a Claude Project — nothing installed.** Everything here is either a prompt
+or a rule, and both are text, so the whole lifecycle runs in a conversation.
+Paste `project/instructions.md` into a Claude Project, upload the four files in
+`project/knowledge/`, add your evidence base, and type `/classify`. Setup is
+about five minutes. See [`project/README.md`](project/README.md).
+
+The pack is **generated** from the same `agents/` and `reference/` files the CLI
+uses, and CI fails if it drifts — two copies of the same reviewer prompt
+disagreeing would mean the Project runs a version that is not the one under test.
+
+```bash
+python -m colorteam project build
+```
+
+What you give up: the checks stop being deterministic. A careful reader working
+the banned-word list finds the problems; a regular expression finds them
+identically every time. Use the Project to do the work; use the CLI when you need
+a number you will defend in front of leadership, or a check that runs in CI.
+
+**As a CLI — installed.** Everything below.
+
 ## Install
 
 ```bash
@@ -118,7 +141,7 @@ On Windows, use `python -m venv .venv && .venv\Scripts\activate` and `copy .env.
 The linter and `--dry-run` need no API key. Verify the install with:
 
 ```bash
-python -m pytest tests/ -q          # 139 passed
+python -m pytest tests/ -q          # 153 passed
 python -m colorteam list            # 10 agents
 python -m colorteam lint examples/sample-draft.md   # 37 findings, gate HOLD
 python -m colorteam trend           # the recorded series
@@ -294,14 +317,17 @@ colorteam/
   trend.py         append-only history and trend reporting
   registry.py      loads and validates agent definitions
   runner.py        prompt assembly, API call, run persistence
-  cli.py           list / lint / trend / knowledge / graphics /
-                   matrix / coverage / rubric / assemble / run
+  project.py       generates the no-install Claude Project pack
+  cli.py           list / lint / trend / knowledge / graphics / matrix /
+                   coverage / rubric / assemble / project / run
 knowledge/         YOUR evidence base — gitignored, never committed
 examples/          synthetic solicitation, a failing draft, its clean revision, outputs
 history/           append-only lint history
+project/           the no-install Claude Project pack — generated, not edited
 reference/         style-rules.yaml, compliance-schema.md, score-rubric.yaml
-tests/             139 tests — rules, determinism, loaders, comments, knowledge,
-                   graphics, matrix round trip, coverage, rubric, assembly
+tests/             153 tests — rules, determinism, loaders, comments, knowledge,
+                   graphics, matrix round trip, coverage, rubric, assembly,
+                   and that the Project pack has not drifted
 ```
 
 ```bash
