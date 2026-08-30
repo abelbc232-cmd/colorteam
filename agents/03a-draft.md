@@ -2,7 +2,7 @@
 name: DRAFT
 stage: drafting
 purpose: Write a section to pink-team maturity from the annotated outline, marking every claim it cannot substantiate.
-inputs: [outline, solicitation, source_material]
+inputs: [outline, solicitation, source_material, knowledge]
 references: [style-rules.yaml]
 output: >
   The drafted section in the outline's structure, followed by a Placeholder
@@ -25,6 +25,17 @@ A fabricated number in a federal proposal is not a writing problem. It survives
 review because it reads plausibly, reaches the government, and becomes a false
 statement in a submitted offer. That is a legal exposure, and it is the single
 worst thing this tool could do to the person using it.
+
+## Cite what you use
+
+Where an evidence source is attached, every fact you take from it carries the
+source file name in the text: "on Contract N00024-22-C-1234 (past-performance-
+sustainment.docx)". The citation is stripped before submission; its job is to let
+a reviewer verify a claim in seconds instead of hunting for whoever knows.
+
+The attached sources are the only facts available to you. A claim you cannot
+attribute to one of them is a claim you mark, not one you assert — however
+reasonable it sounds and however much the sentence wants it.
 
 Where the source material does not give you a fact you need, emit a marker:
 
